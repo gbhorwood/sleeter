@@ -1,0 +1,7 @@
+build
+dist
+sleeter.egg-info
+venv
+.vscode
+sleeter/*.pyc
+sleeter/__pycache__
