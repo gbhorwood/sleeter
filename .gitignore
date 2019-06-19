@@ -5,3 +5,4 @@ venv
 .vscode
 sleeter/*.pyc
 sleeter/__pycache__
+test.sh

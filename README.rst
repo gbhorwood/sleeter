@@ -13,8 +13,8 @@ Requirements
 * An AWS user with both 'programatic' and 'administrator' access
 * Your AWS user's access key id and secret access key in your ~/.aws/credentials file
 * A Route53 hosted zone for the domain you wish to use
+* The AWS cli tools installed and in your path 
 * Python 3.7
-* 
 
 Installation
 ============
@@ -33,7 +33,7 @@ Usage
 Quickstart
 ^^^^^^^^^^
 
-Assuming your AWS credentials are set as default and the home page of your site is ``index.html``, you can deploy the
+Assuming your AWS credentials and region are set as default and the home page of your site is ``index.html``, you can deploy the
 site found at ``/path/to/mysite`` to the url ``mysite.example.com`` with:
 
 .. code-block:: bash

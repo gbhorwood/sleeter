@@ -6,6 +6,7 @@ import sys
 import time
 import boto3
 
+# @todo the weird dns issue. fix it.
 # @todo figure out validation in argparse
 # @todo fill out help
 # @todo deal with hosted zones list over 100 in validate_hosted_zone
@@ -22,10 +23,12 @@ boto3_client_cloudfront = None
 aws_access_key_id = None
 aws_secret_access_key = None
 
+# holds command line arguments
 args = None
 
 # url of the web-hosted s3 site
 s3_site_endpoint = None
+s3_bucket_name = None
 # the hosted zone
 route53_hosted_zone_name = None
 route53_hosted_zone_id = None
@@ -52,6 +55,7 @@ def make_bucket():
     import os
 
     global s3_site_endpoint
+    global s3_bucket_name
 
     header("Making bucket")
 
@@ -124,13 +128,83 @@ def make_bucket():
 
     # build the endpoint for the s3 site
     s3_site_endpoint = args.site_name+".s3-website-"+args.region+".amazonaws.com"
-    ok("Static website ate: http://"+s3_site_endpoint)
+    ok("Static website at: http://"+s3_site_endpoint)
+
+    # build bucket name
+    s3_bucket_name = args.site_name+".s3.amazonaws.com"
 
 
 def make_cloudfront():
+
+    global s3_bucket_name
+    global s3_site_endpoint
+
+    header("Making cloudfront distribution")
+
     # caller_reference is a unique identifier used to prevent making the same
     # call twice
-    caller_reference = route53_hosted_zone_name + time.time()
+    caller_reference = route53_hosted_zone_name + str(time.time())
+
+
+                        #'S3OriginConfig': {
+                        #    'OriginAccessIdentity': ''
+                        #}
+
+    response = boto3_client_cloudfront.create_distribution(
+        DistributionConfig={
+            'CallerReference': caller_reference,
+            'Aliases': {
+                'Quantity': 1,
+                'Items': [args.site_name],
+            },
+            'DefaultRootObject': args.index_suffix,
+            'Origins': {
+                'Quantity': 1,
+                'Items': [
+                    {
+                        'Id': '1',
+                        'DomainName': s3_site_endpoint,
+                        'CustomOriginConfig': {
+                            'HTTPPort': 80,
+                            'HTTPSPort': 443,
+                            'OriginProtocolPolicy': 'match-viewer',
+                            'OriginSslProtocols': {
+                                'Quantity': 1,
+                                'Items': [
+                                    'TLSv1.1'
+                                ]
+                            }
+                        }
+                    }
+                ]
+            },
+            'DefaultCacheBehavior': {
+                'TargetOriginId': '1',
+                'ForwardedValues': {
+                    'QueryString': True,
+                    'Cookies': {
+                        'Forward': 'none'
+                    }
+                },
+                'TrustedSigners': {
+                    'Enabled': False,
+                    'Quantity': 0
+                },
+                'ViewerProtocolPolicy': 'allow-all',
+                'MinTTL': 0
+            },
+            'ViewerCertificate': {
+                'CloudFrontDefaultCertificate': False,
+                'ACMCertificateArn': acm_arn,
+                'SSLSupportMethod': 'sni-only',
+                'MinimumProtocolVersion': 'TLSv1.1_2016'
+            },
+            'Comment': 'Distribution for '+args.site_name,
+            'Enabled': True
+        }
+    )
+
+    testResponse(response, "create_distribution")
 
 
 def make_acm():
@@ -163,7 +237,7 @@ def make_acm():
                 print("")
                 break
             else:
-                print ('.')
+                print('.')
                 #print('.', end='', flush=True)
 
     except Exception as e:
@@ -258,7 +332,7 @@ def make_boto3_clients():
     # cloudfront
     global boto3_client_cloudfront
     try:
-        boto3_client_acm = boto3.client(
+        boto3_client_cloudfront = boto3.client(
             'cloudfront',
             aws_access_key_id=aws_access_key_id,
             aws_secret_access_key=aws_secret_access_key,
@@ -359,6 +433,8 @@ def get_args():
 
 def validate_hosted_zone():
     """
+    Validates that the domain of the site_name passed to the script 
+    has a route53 hosted zone for this AWS user
     """
 
     global route53_hosted_zone_name
@@ -389,35 +465,69 @@ def validate_hosted_zone():
 
 
 def ok(message):
+    """
+    Prints message with a green OK prepended
+    """
+
     print(OK, message)
 
 
 def notice(message):
+    """
+    Prints message with a yellow NOTICE prepended
+    """
     print(NOTICE, message)
 
 
 def error(message, fatal=False):
+    """
+    Prints message with a red ERROR prepended. Quits script if fatal=true.
+    """
     print(ERROR, message)
     if fatal:
         sys.exit()
 
 
 def header(message):
+    """
+    Prints message as bold for header
+    """
     print(BOLD_ANSI, message, CLOSE_ANSI)
 
 
 def testResponse(response, name):
+    """
+    Prints the HTTP status response from AWS
+    """
     http_status = response.get('ResponseMetadata').get('HTTPStatusCode')
     print(OK, name, http_status)
 
 
 def main():
-    get_args()
-    validate_args()
-    get_aws_credentials()
-    make_boto3_clients()
-    validate_hosted_zone()
-    make_bucket()
-    make_acm()
+    """
+    Start point for script
+    """
 
-#if __name__ == '__main__':
+    # Parse the args from the command in the global args variable
+    get_args()
+
+    # Validates that the args are good
+    validate_args()
+
+    # Retreive AWS credentials from ~/.aws/credentials and set
+    get_aws_credentials()
+
+    # Make boto3 clients form s3, route53, acm and cloudfront
+    make_boto3_clients()
+
+    # Validate that the user has a hosted zone in route54 for the domain requested
+    validate_hosted_zone()
+
+    # Make the s3 bucket, set for static hosting, upload the site files
+    make_bucket()
+
+    # Create the acm certificate necessary for cloudfront
+    #make_acm()
+
+    #make_cloudfront()
+
